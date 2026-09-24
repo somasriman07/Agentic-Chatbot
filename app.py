@@ -1,4 +1,4 @@
-from agentic_chatbot_backend import workflow
+from agentic_chatbot_backend import workflow,get_all_thread
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 import streamlit as st
 import uuid
@@ -11,7 +11,6 @@ def generate_thread_id():
 
 # Add a new thread ID to the conversation list
 def add_thread(thread_id):
-
     # Prevent the same thread from being added multiple times
     if thread_id not in st.session_state["chat_threads"]:
         st.session_state["chat_threads"].append(thread_id)
@@ -33,19 +32,13 @@ def generate_thread_name(user_input):
 # Create a completely new chat conversation
 def reset_chat():
 
-    # Generate and assign a new thread ID
     st.session_state["thread_id"] = generate_thread_id()
 
-    # Clear the current chat messages from the UI
     st.session_state["message_history"] = []
 
-    # Initially give the thread a default name
     st.session_state["thread_names"][
         st.session_state["thread_id"]
     ] = "New Chat"
-
-    # Add the new thread to the conversation list
-    add_thread(st.session_state["thread_id"])
 
 
 # Load a previous conversation from the LangGraph checkpointer
@@ -81,19 +74,19 @@ if "thread_id" not in st.session_state:
 
 # Create a list for storing all conversation thread IDs
 if "chat_threads" not in st.session_state:
-    st.session_state["chat_threads"] = []
+    st.session_state["chat_threads"] = get_all_thread()
 
 if "thread_names" not in st.session_state:
     st.session_state["thread_names"] = {}
 
 
-# Add the current thread to the conversation list
-add_thread(st.session_state["thread_id"])
-
+# Initialize thread name storage
 if st.session_state["thread_id"] not in st.session_state["thread_names"]:
     st.session_state["thread_names"][
         st.session_state["thread_id"]
     ] = "New Chat"
+
+
 # ========================= Sidebar threading feature =========================
 
 # Display the sidebar title
@@ -189,6 +182,7 @@ if user_input:
     })
     # Generate a name for the conversation from the first user message
     thread_id = st.session_state["thread_id"]
+    add_thread(thread_id)
 
     if st.session_state["thread_names"].get(thread_id) == "New Chat":
 
