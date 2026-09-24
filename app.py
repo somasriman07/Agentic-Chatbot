@@ -17,6 +17,19 @@ def add_thread(thread_id):
         st.session_state["chat_threads"].append(thread_id)
 
 
+def generate_thread_name(user_input):
+    """
+    Generate a short conversation name from the user's first message.
+    """
+    name = user_input.strip()
+
+    # Keep the name short for the sidebar
+    if len(name) > 30:
+        name = name[:30].rsplit(" ", 1)[0] + "..."
+
+    return name
+
+
 # Create a completely new chat conversation
 def reset_chat():
 
@@ -25,6 +38,11 @@ def reset_chat():
 
     # Clear the current chat messages from the UI
     st.session_state["message_history"] = []
+
+    # Initially give the thread a default name
+    st.session_state["thread_names"][
+        st.session_state["thread_id"]
+    ] = "New Chat"
 
     # Add the new thread to the conversation list
     add_thread(st.session_state["thread_id"])
@@ -65,11 +83,17 @@ if "thread_id" not in st.session_state:
 if "chat_threads" not in st.session_state:
     st.session_state["chat_threads"] = []
 
+if "thread_names" not in st.session_state:
+    st.session_state["thread_names"] = {}
+
 
 # Add the current thread to the conversation list
 add_thread(st.session_state["thread_id"])
 
-
+if st.session_state["thread_id"] not in st.session_state["thread_names"]:
+    st.session_state["thread_names"][
+        st.session_state["thread_id"]
+    ] = "New Chat"
 # ========================= Sidebar threading feature =========================
 
 # Display the sidebar title
@@ -90,11 +114,16 @@ if st.sidebar.button("New Chat"):
 # This shows the newest conversation first
 for thread_id in st.session_state["chat_threads"][::-1]:
 
-    # Create one sidebar button for every conversation
+    thread_name = st.session_state["thread_names"].get(
+        thread_id,
+        "New Chat"
+    )
+
     if st.sidebar.button(
-        str(thread_id),
+        thread_name,
         key=thread_id
     ):
+        
 
         # Set the selected thread as the current thread
         st.session_state["thread_id"] = thread_id
@@ -158,6 +187,14 @@ if user_input:
         "role": "user",
         "content": user_input
     })
+    # Generate a name for the conversation from the first user message
+    thread_id = st.session_state["thread_id"]
+
+    if st.session_state["thread_names"].get(thread_id) == "New Chat":
+
+        st.session_state["thread_names"][thread_id] = generate_thread_name(
+            user_input
+        )
 
     # Display the user's message in the chat interface
     with st.chat_message("user"):
