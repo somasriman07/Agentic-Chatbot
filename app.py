@@ -1,5 +1,5 @@
-from agentic_chatbot_backend import workflow,get_all_thread
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from agentic_chatbot_backend import workflow, get_all_thread
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 import streamlit as st
 import uuid
 
@@ -31,11 +31,8 @@ def generate_thread_name(user_input):
 
 # Create a completely new chat conversation
 def reset_chat():
-
     st.session_state["thread_id"] = generate_thread_id()
-
     st.session_state["message_history"] = []
-
     st.session_state["thread_names"][
         st.session_state["thread_id"]
     ] = "New Chat"
@@ -43,7 +40,6 @@ def reset_chat():
 
 # Load a previous conversation from the LangGraph checkpointer
 def load_conversation(thread_id):
-
     # Get the saved state for the selected thread
     state = workflow.get_state(
         config={
@@ -52,35 +48,29 @@ def load_conversation(thread_id):
             }
         }
     )
-
-    # Return saved messages
-    # Return an empty list if no messages are available
+    # Return saved messages, or empty list if none
     return state.values.get("messages", [])
 
 
-# Display the main application title
+# ========================= App title =========================
+
 st.title("Agentic Chatbot with LangGraph")
 
 
-# Create message_history when the app runs for the first time
+# ========================= Session state init =========================
+
 if "message_history" not in st.session_state:
     st.session_state["message_history"] = []
 
-
-# Create a thread ID when the app runs for the first time
 if "thread_id" not in st.session_state:
     st.session_state["thread_id"] = generate_thread_id()
 
-
-# Create a list for storing all conversation thread IDs
 if "chat_threads" not in st.session_state:
     st.session_state["chat_threads"] = get_all_thread()
 
 if "thread_names" not in st.session_state:
     st.session_state["thread_names"] = {}
 
-
-# Initialize thread name storage
 if st.session_state["thread_id"] not in st.session_state["thread_names"]:
     st.session_state["thread_names"][
         st.session_state["thread_id"]
@@ -89,150 +79,128 @@ if st.session_state["thread_id"] not in st.session_state["thread_names"]:
 
 # ========================= Sidebar threading feature =========================
 
-# Display the sidebar title
 st.sidebar.title("My Conversations")
 
-
-# Create a button for starting a new conversation
 if st.sidebar.button("New Chat"):
-
-    # Reset the current chat and create a new thread
     reset_chat()
-
-    # Rerun the Streamlit app to update the interface
     st.rerun()
 
-
-# Display all conversation threads in reverse order
-# This shows the newest conversation first
+# Display all conversation threads in reverse order (newest first)
 for thread_id in st.session_state["chat_threads"][::-1]:
 
-    thread_name = st.session_state["thread_names"].get(
-        thread_id,
-        "New Chat"
-    )
+    thread_name = st.session_state["thread_names"].get(thread_id, "New Chat")
 
-    if st.sidebar.button(
-        thread_name,
-        key=thread_id
-    ):
-        
+    if st.sidebar.button(thread_name, key=thread_id):
 
-        # Set the selected thread as the current thread
         st.session_state["thread_id"] = thread_id
 
-        # Load the messages saved under the selected thread
         messages = load_conversation(thread_id)
 
-        # Temporary list for converting LangChain messages
-        # into Streamlit's required message format
         temp_messages = []
 
-        # Loop through all saved messages
         for message in messages:
-
-            # Check whether the message was sent by the user
             if isinstance(message, HumanMessage):
                 role = "user"
-
-            # Check whether the message was sent by the AI
             elif isinstance(message, AIMessage):
                 role = "assistant"
-
-            # Ignore other message types, such as ToolMessage
             else:
+                # Ignore ToolMessage and other types
                 continue
 
-            # Convert the LangChain message into a dictionary
             temp_messages.append({
                 "role": role,
                 "content": message.content
             })
 
-        # Replace the current UI history with the selected conversation
         st.session_state["message_history"] = temp_messages
-
-        # Rerun the application to display the loaded messages
         st.rerun()
 
 
 # ========================= Main chat interface =========================
 
-# Display all messages from the currently selected conversation
+# Display all messages from the current conversation
 for message in st.session_state["message_history"]:
-
-    # Create either a user chat bubble or assistant chat bubble
     with st.chat_message(message["role"]):
-
-        # Display the message content
         st.text(message["content"])
 
 
-# Create the chat input box
+# Chat input box
 user_input = st.chat_input("Type here")
 
 
-# Run this block after the user submits a message
 if user_input:
 
-    # Save the user's message in Streamlit session state
+    # Save the user message
     st.session_state["message_history"].append({
         "role": "user",
         "content": user_input
     })
-    # Generate a name for the conversation from the first user message
+
     thread_id = st.session_state["thread_id"]
     add_thread(thread_id)
 
+    # Name the conversation from the first message
     if st.session_state["thread_names"].get(thread_id) == "New Chat":
-
         st.session_state["thread_names"][thread_id] = generate_thread_name(
             user_input
         )
 
-    # Display the user's message in the chat interface
+    # Show the user bubble
     with st.chat_message("user"):
         st.text(user_input)
 
-    # Pass the current thread ID to LangGraph
-    # LangGraph uses this ID to save and retrieve conversation memory
     CONFIG = {
         "configurable": {
             "thread_id": st.session_state["thread_id"]
         }
     }
 
-    # Create the assistant chat-message container
+    # ========================= Assistant response =========================
     with st.chat_message("assistant"):
 
-        # Stream the assistant response token by token
-        ai_message = st.write_stream(
+        status_holder = {"box": None}
 
-            # Return only the content of AI message chunks
-            message_chunk.content
-
-            # Stream messages from the LangGraph workflow
+        def ai_only_stream():
             for message_chunk, metadata in workflow.stream(
-                {
-                    # Send the latest user message to the workflow
-                    "messages": [
-                        HumanMessage(content=user_input)
-                    ]
-                },
-
-                # Use the current conversation thread
+                {"messages": [HumanMessage(content=user_input)]},
                 config=CONFIG,
+                stream_mode="messages",
+            ):
+                # When LLM decides to call a tool, show it immediately
+                if isinstance(message_chunk, AIMessage):
+                    tool_calls = getattr(message_chunk, "tool_calls", [])
+                    if tool_calls:
+                        for tc in tool_calls:
+                            tool_name = tc.get("name", "tool")
+                            if status_holder["box"] is None:
+                                status_holder["box"] = st.status(
+                                    f"🔧 Using `{tool_name}` …",
+                                    expanded=True
+                                )
+                            else:
+                                status_holder["box"].update(
+                                    label=f"🔧 Using `{tool_name}` …",
+                                    state="running",
+                                    expanded=True,
+                                )
 
-                # Stream individual message chunks
-                stream_mode="messages"
-            )
+                # Mark tool as done once result arrives
+                if isinstance(message_chunk, ToolMessage):
+                    tool_name = getattr(message_chunk, "name", "tool")
+                    if status_holder["box"] is not None:
+                        status_holder["box"].update(
+                            label=f"✅ `{tool_name}` done",
+                            state="complete",
+                            expanded=False,
+                        )
 
-            # Display only AI messages
-            # This prevents tool and user messages from appearing
-            if isinstance(message_chunk, AIMessage)
-        )
+                # Stream only AI text tokens
+                if isinstance(message_chunk, AIMessage) and message_chunk.content:
+                    yield message_chunk.content
 
-    # Save the complete assistant response in Streamlit session state
+        ai_message = st.write_stream(ai_only_stream())
+
+    # Save the assistant response
     st.session_state["message_history"].append({
         "role": "assistant",
         "content": ai_message
