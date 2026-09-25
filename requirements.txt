@@ -23,3 +23,12 @@ langchain-google-genai==4.2.4
 langchain-tavily==0.2.18
 tavily-python==0.7.26
 langchain-community==0.4.2
+
+
+faiss-cpu==1.14.3
+pypdf==6.13.2
+langchain-text-splitters==1.1.2
+
+# Hybrid retrieval
+rank-bm25==0.2.2
+langchain-classic
